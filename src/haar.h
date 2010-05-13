@@ -35,6 +35,8 @@
 
 #define UNIT_IS_DOUBLE
 
+namespace haar {
+
 #ifdef UNIT_IS_DOUBLE
 typedef double	Unit;
 #else
@@ -56,9 +58,10 @@ typedef struct valStruct_{
 
 typedef std::priority_queue < valStruct > valqueue;
 
-void initImgBin();
 void transform(Unit* a, Unit* b, Unit* c);
 void transformChar(unsigned char* c1, unsigned char* c2, unsigned char* c3, Unit* a, Unit* b, Unit* c);
 int calcHaar(Unit* cdata1, Unit* cdata2, Unit* cdata3, Idx* sig1, Idx* sig2, Idx* sig3, double * avgl);
+
+} // namespace haar
 
 #endif

@@ -53,6 +53,7 @@
 
 /* imgSeek Includes */
 #include "haar.h"
+namespace haar {
 
 #ifndef max
 #define max(a, b)  (((a) > (b)) ? (a) : (b))
@@ -237,8 +238,7 @@ haar2D(Unit a[])
    Fully inplace calculation; order of result is interleaved though,
    but we don't care about that.
 */
-void
-transform(Unit* a, Unit* b, Unit* c)
+void transform(Unit* a, Unit* b, Unit* c)
 {
   RGB_2_YIQ(a, b, c);
 
@@ -342,3 +342,6 @@ calcHaar(Unit *cdata1, Unit *cdata2, Unit *cdata3,
 
   return 1;
 }
+
+} // namespace haar
+

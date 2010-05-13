@@ -94,9 +94,9 @@ class DiskSigStruct {
 public:
 
 	imageId id;			/* picture id */
-	Idx sig1[NUM_COEFS];		/* Y positions with largest magnitude */
-	Idx sig2[NUM_COEFS];		/* I positions with largest magnitude */
-	Idx sig3[NUM_COEFS];		/* Q positions with largest magnitude */
+	haar::Idx sig1[NUM_COEFS];		/* Y positions with largest magnitude */
+	haar::Idx sig2[NUM_COEFS];		/* I positions with largest magnitude */
+	haar::Idx sig3[NUM_COEFS];		/* Q positions with largest magnitude */
 	double avgl[3];		/* YIQ for position [0,0] */
 	/* image properties extracted when opened for the first time */
 	int width;			/* in pixels */
@@ -113,9 +113,9 @@ public:
 /* signature structure */
 typedef struct sigStructV06_{
 	imageId id;			/* picture id */
-	Idx sig1[NUM_COEFS];		/* Y positions with largest magnitude */
-	Idx sig2[NUM_COEFS];		/* I positions with largest magnitude */
-	Idx sig3[NUM_COEFS];		/* Q positions with largest magnitude */
+	haar::Idx sig1[NUM_COEFS];		/* Y positions with largest magnitude */
+	haar::Idx sig2[NUM_COEFS];		/* I positions with largest magnitude */
+	haar::Idx sig3[NUM_COEFS];		/* Q positions with largest magnitude */
 	double avgl[3];		/* YIQ for position [0,0] */
 	double score;			/* used when doing queries */
 	/* image properties extracted when opened for the first time */
@@ -271,7 +271,7 @@ typedef std::map<const int, dbSpaceStruct*>::iterator  dpspaceIterator;
 // Main exported functions
 double_vector queryImgID(const int dbId, long int id, unsigned int numres);
 double_vector queryImgIDFast(const int dbId, long int id, unsigned int numres);
-double_vector queryImgData(const int dbId, Idx * sig1, Idx * sig2, Idx * sig3, double *avgl, int numres, int sketch);
+double_vector queryImgData(const int dbId, haar::Idx * sig1, haar::Idx * sig2, haar::Idx * sig3, double *avgl, int numres, int sketch);
 int addImage(const int dbId, const long int id, char* filename);
 int savedb(const int dbId, char* filename);
 int loaddb(const int dbId, char* filename);
@@ -288,7 +288,7 @@ int getImageWidth(const int dbId, long int id);
 double calcAvglDiff(const int dbId, long int id1, long int id2);
 double calcDiff(const int dbId, long int id1, long int id2);
 double_vector getImageAvgl(const int dbId, long int id1);
-int addImageBlob(const int dbId, const long int id, const void *blob, const long length);
+int addImageBlob(const int dbId, const long int id, const void *blob, size_t length);
 std::vector<int> getDBList();
 std::vector<long int> getImgIdList(const int dbId);
 bool isValidDB(const int dbId);
