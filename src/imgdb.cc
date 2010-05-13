@@ -41,10 +41,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include <fstream>
 #include <iostream>
 
+#include "imgdb.h"
+
 using namespace std;
-/* ImageMagick includes */
-//#include <magick/api.h>
-#include <Magick++.h>
 using Magick::Image;
 using MagickCore::DestroyImage;
 using MagickCore::ExceptionInfo;
@@ -52,7 +51,7 @@ using MagickCore::ExceptionInfo;
 /* imgSeek includes */
 
 /* Database */
-#include "imgdb.h"
+
 using namespace haar;
 
 #ifndef max
@@ -142,13 +141,22 @@ int getImageWidth(const int dbId, long int id) {
   return dbSpace[dbId]->sigs[id]->width;
 }
 
-bool isImageOnDB(const int dbId, long int id) {
-  return dbSpace[dbId]->sigs.count(id) > 0;
-}
-
 int getImageHeight(const int dbId, long int id) {
   if (!validate_imgid(dbId, id)) { cerr << "ERROR: image id (" << id << ") not found on given dbid (" << dbId << ") or dbid not existant" << endl ; return 0;};
   return dbSpace[dbId]->sigs[id]->height;
+}
+
+bool getImageWidthAndHeight(const int dbId, long int id, int *w, int *h) {
+  if (!validate_imgid(dbId, id))
+    return false;
+  SigStruct *st = dbSpace[dbId]->sigs[id];
+  *w = st->width;
+  *h = st->height;
+  return true;
+}
+
+bool isImageOnDB(const int dbId, long int id) {
+  return dbSpace[dbId]->sigs.count(id) > 0;
 }
 
 double_vector getImageAvgl(const int dbId, long int id) {
@@ -161,25 +169,11 @@ double_vector getImageAvgl(const int dbId, long int id) {
   return res;
 }
 
-int addImageFromImage(const int dbId, const long int id, Image * image ) {
-
-  /* id is a unique image identifier
-  filename is the image location
-  thname is the thumbnail location for this image
-  doThumb should be set to 1 if you want to save the thumbnail on thname
-  Images with a dimension smaller than ignDim are ignored
-   */
-
+SigStruct *analyzeImage(Image *image) {
   if (!image) {
-    cerr << "ERROR: unable to add null image" << endl;
-    return 0;
+    throw std::string("unable to add null image");
   }
 
-  // Made static for speed; only used locally
-  static Unit cdata1[16384];
-  static Unit cdata2[16384];
-  static Unit cdata3[16384];
-  int i;
   unsigned int width, height;
   
   width = image->columns();
@@ -198,31 +192,51 @@ int addImageFromImage(const int dbId, const long int id, Image * image ) {
     rchan[idx] = pixel_cache->red;
     gchan[idx] = pixel_cache->green;
     bchan[idx] = pixel_cache->blue;
-    pixel_cache++;
+    ++pixel_cache;
   }
-  
-  haar::transformChar(rchan, gchan, bchan, cdata1, cdata2, cdata3);
 
+  // Made static for speed; only used locally
+  static Unit cdata1[16384];
+  static Unit cdata2[16384];
+  static Unit cdata3[16384];
+
+  haar::transformChar(rchan, gchan, bchan, cdata1, cdata2, cdata3);
+  
   SigStruct *nsig = new SigStruct();
-  nsig->id = id;
   nsig->width = width;
   nsig->height = height;
 
-  if (dbSpace[dbId]->sigs.count(id)) {       
+  haar::calcHaar(cdata1, cdata2, cdata3,
+    nsig->sig1, nsig->sig2, nsig->sig3, nsig->avgl);
+
+  return nsig;
+}
+
+int addImageFromImage(const int dbId, const long int id, Image * image ) {
+
+  /* id is a unique image identifier
+  filename is the image location
+  thname is the thumbnail location for this image
+  doThumb should be set to 1 if you want to save the thumbnail on thname
+  Images with a dimension smaller than ignDim are ignored
+   */
+
+  if (dbSpace[dbId]->sigs.count(id)) {
     delete dbSpace[dbId]->sigs[id];
     dbSpace[dbId]->sigs.erase(id);
-
-    cerr << "ERROR: dbId already in use" << endl;
-    return 0;    
-
+    throw std::string("id already in use");
+    return 0;
   }
+
+  SigStruct *nsig = analyzeImage(image);
+  nsig->id = id;
+
   // insert into sigmap
   dbSpace[dbId]->sigs[id] = nsig;
   // insert into ids bloom filter
   dbSpace[dbId]->imgIdsFilter->insert(id);
 
-  calcHaar(cdata1, cdata2, cdata3,
-      nsig->sig1, nsig->sig2, nsig->sig3, nsig->avgl);
+  int i;
 
   for (i = 0; i < NUM_COEFS; i++) {  // populate buckets
 
@@ -573,7 +587,7 @@ int savealldbs(char* filename) {
   return res;
 }
 
-std::vector<double> queryImgDataFiltered(const int dbId, Idx * sig1, Idx * sig2, Idx * sig3, double *avgl, int numres, int sketch, bloom_filter* bfilter) {
+std::vector<double> queryImgDataFiltered(const int dbId, Idx * sig1, Idx * sig2, Idx * sig3, double *avgl, unsigned int numres, int sketch, bloom_filter* bfilter) {
   int idx, c;
   int pn;
   Idx *sig[3] = { sig1, sig2, sig3 };
@@ -633,7 +647,7 @@ std::vector<double> queryImgDataFiltered(const int dbId, Idx * sig1, Idx * sig2,
   vector<double> V;
 
   // Fill up the numres-bounded priority queue (largest at top):
-  for (int cnt = 0; cnt < numres; cnt++) {
+  for (unsigned int cnt = 0; cnt < numres; cnt++) {
     if (sit == dbSpace[dbId]->sigs.end()) {
       // No more images; cannot get requested numres, so just return these initial ones.
       return V;
@@ -673,7 +687,7 @@ avgl is the average luminance
 numres is the max number of results
 sketch (0 or 1) tells which set of weights to use
  */
-std::vector<double> queryImgData(const int dbId, Idx * sig1, Idx * sig2, Idx * sig3, double *avgl, int numres, int sketch) {
+std::vector<double> queryImgData(const int dbId, Idx * sig1, Idx * sig2, Idx * sig3, double *avgl, unsigned int numres, int sketch) {
   return queryImgDataFiltered(dbId, sig1, sig2, sig3, avgl, numres, sketch, 0);
 
 }
@@ -684,7 +698,7 @@ avgl is the average luminance
 numres is the max number of results
 sketch (0 or 1) tells which set of weights to use
  */
-std::vector<double> queryImgDataFast(const int dbId, Idx *, Idx *, Idx *, double *avgl, int numres, int sketch) {
+std::vector<double> queryImgDataFast(const int dbId, Idx *, Idx *, Idx *, double *avgl, unsigned int numres, int sketch) {
   int c;
 
   vector<double> V;
@@ -704,7 +718,7 @@ std::vector<double> queryImgDataFast(const int dbId, Idx *, Idx *, Idx *, double
 
 
   // Fill up the numres-bounded priority queue (largest at top):
-  for (int cnt = 0; cnt < numres; cnt++) {
+  for (unsigned int cnt = 0; cnt < numres; cnt++) {
     if (sit == dbSpace[dbId]->sigs.end())
       // No more images; cannot get requested numres, alas.
       return V;
@@ -888,7 +902,7 @@ std::vector<double> queryImgID(const int dbId, long int id, unsigned int numres)
       dbSpace[dbId]->sigs[id]->avgl, numres, 0);
 }
 
-std::vector<double> queryImgIDFiltered(const int dbId, long int id, int numres, bloom_filter* bf) {
+std::vector<double> queryImgIDFiltered(const int dbId, long int id, unsigned int numres, bloom_filter* bf) {
   /*query for images similar to the one that has this id
   numres is the maximum number of results
    */

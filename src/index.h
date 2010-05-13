@@ -19,10 +19,13 @@ protected:
   static v8::Handle<v8::Value> SetImageFromFileOrURLSync(const v8::Arguments& args);
   static v8::Handle<v8::Value> AddImageFromData(const v8::Arguments& args);
   static v8::Handle<v8::Value> SetImageFromData(const v8::Arguments& args);
+  static v8::Handle<v8::Value> GetImageDimensions(const v8::Arguments& args);
+  static v8::Handle<v8::Value> GetImageAvgL(const v8::Arguments& args);
   static v8::Handle<v8::Value> Contains(const v8::Arguments& args);
   static v8::Handle<v8::Value> Remove(const v8::Arguments& args);
   
   static v8::Handle<v8::Value> Query(const v8::Arguments& args);
+  static v8::Handle<v8::Value> QueryByImageData(const v8::Arguments& args);
   static v8::Handle<v8::Value> QueryByKeywords(const v8::Arguments& args);
   
   static v8::Handle<v8::Value> AddKeyword(const v8::Arguments& args);

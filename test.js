@@ -46,10 +46,23 @@ p('db.contains('+id+')', db.contains(id))
 p('imgdb.loadedDbIds()', imgdb.loadedDbIds())
 
 p('db.addKeyword(0, "foo")', db.addKeyword(0, 'foo'));
+p('db.addKeyword(1, "foo")', db.addKeyword(1, 'foo'));
 p("db.addKeywords(0, ['foo', 'bar', 'baz'])", db.addKeywords(0, ['foo', 'bar', 'baz']));
+
+p('db.getImageDimensions(1)', db.getImageDimensions(1));
+p('db.getImageDimensions(9999999)', db.getImageDimensions(9999999));
+
+p('db.getImageAvgL(0)', db.getImageAvgL(0));
+p('db.getImageAvgL(1)', db.getImageAvgL(1));
 
 p('db.ids', db.ids)
 
 p('db.queryByKeywords(["foo"])', db.queryByKeywords(["foo"]))
+p('db.query(0, 5, false, true)', db.query(0, 5, false, true))
+
+db.queryByImageFile(imageFile, function(err, v){
+  if (err) return sys.error(err.stack || err);
+  p('db.queryByImageFile completed', v);
+})
 
 db.saveSync('db.db');

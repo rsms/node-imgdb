@@ -26,6 +26,33 @@ function _setImageFromBuffer(self, id, buffer, callback) {
   }
 }
 
+function _queryImageBuffer(self, argc, buffer, limit, fast, sketch, callback) {
+  var v;
+  try {
+    if (argc === 2) {
+      v = self.queryByImageData(buffer);
+    } else if (argc === 3) {
+      v = self.queryByImageData(buffer, limit);
+    } else if (argc === 4) {
+      v = self.queryByImageData(buffer, limit, fast);
+    } else {
+      v = self.queryByImageData(buffer, limit, fast, sketch);
+    }
+    callback(null, v);
+  } catch (e) {
+    callback(e);
+  }
+}
+
+function _httpCatBuffer(url, callback) {
+  http.cat(url, 'binary', function(err, str){
+    if (err) return callback(err);
+    var buffer = new Buffer(str.length);
+    buffer.binaryWrite(str, 0);
+    callback(null, buffer);
+  });
+}
+
 // addImageFromFile(filename[, callback(err, newId)])
 DB.prototype.addImageFromFile = function(filename, callback) {
   var self = this;
@@ -47,10 +74,8 @@ DB.prototype.setImageFromFile = function(id, filename, callback) {
 // addImageFromURL(url[, callback(err, newId)])
 DB.prototype.addImageFromURL = function(url, callback) {
   var self = this;
-  http.cat(url, 'binary', function(err, str){
+  _httpCatBuffer(url, function(err, buffer){
     if (err) return callback && callback(err);
-    var buffer = new Buffer(str.length);
-    buffer.binaryWrite(str, 0);
     _addImageFromBuffer(self, buffer, callback);
   });
 }
@@ -58,10 +83,8 @@ DB.prototype.addImageFromURL = function(url, callback) {
 // setImageFromURL(id, url[, callback(err)])
 DB.prototype.setImageFromURL = function(id, url, callback) {
   var self = this;
-  http.cat(url, 'binary', function(err, str){
+  _httpCatBuffer(url, function(err, buffer){
     if (err) return callback && callback(err);
-    var buffer = new Buffer(str.length);
-    buffer.binaryWrite(str, 0);
     _setImageFromBuffer(self, id, buffer, callback);
   });
 }
@@ -75,4 +98,25 @@ DB.prototype.addImageFromFileOrURL = function(source, callback) {
   } else {
     this.addImageFromFile(source, callback);
   }
+}
+
+function _queryByImageFileOrURL(fun, source, limit, fast, sketch, callback) {
+  var self = this;
+  callback = arguments[arguments.length-1];
+  if (typeof callback !== 'function')
+    throw new TypeError("last argument must be a function");
+  fun(source, function(err, buffer){
+    if (err) return callback(err);
+    _queryImageBuffer(self, arguments.length, buffer, limit, fast, sketch, callback);
+  });
+}
+
+DB.prototype.queryByImageFile = function(filename, limit, fast, sketch, callback) {
+  _queryByImageFileOrURL.apply(this,
+    [fs.readFile].concat(Array.prototype.slice.call(arguments)));
+}
+
+DB.prototype.queryByImageURL = function(url, limit, fast, sketch, callback) {
+  _queryByImageFileOrURL.apply(this,
+    [_httpCatBuffer].concat(Array.prototype.slice.call(arguments)));
 }

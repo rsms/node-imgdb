@@ -2,6 +2,7 @@
 #include "index.h"
 
 #include <node_buffer.h>
+#include <Magick++.h>
 
 using namespace v8;
 using namespace node;
@@ -26,10 +27,6 @@ static uint _strHash(const char *str) {
 	}
 	return h;
 }
-
-static Persistent<String> id_symbol;
-static Persistent<String> ids_symbol;
-static Persistent<String> length_symbol;
 
 
 DB::DB(int id) : ObjectWrap() {
@@ -104,60 +101,21 @@ Handle<Value> DB::Remove(const Arguments& args) {
       String::New("first and only argument must be a number")));
   }
   DB *self = ObjectWrap::Unwrap<DB>(args.This());
-  if (!removeID(self->id_, VINT64(args[0])))
-    return ThrowException(Exception::Error(String::New("ImgDBError")));
-  return Undefined();
+  bool y = !!removeID(self->id_, VINT64(args[0]));
+  return scope.Close(Boolean::New(y));
 }
 
-
-// query(id[, numres[, fast]|fast])
-Handle<Value> DB::Query(const Arguments& args) {
-  HandleScope scope;
-  if (args.Length() < 1 || !args[0]->IsNumber()) {
-    return ThrowException(Exception::TypeError(
-      String::New("first argument must be a number")));
-  }
-  DB *self = ObjectWrap::Unwrap<DB>(args.This());
-  unsigned int numres = 25;
-  bool fast = false;
-
-  if (args.Length() > 1) {
-    if (args[1]->IsNumber()) {
-      numres = VINT32(args[1]);
-    } else if (args.Length() == 2 && args[1]->IsBoolean()) {
-      fast = args[1]->BooleanValue();
-    } else {
-      return ThrowException(Exception::TypeError(
-        String::New("second argument must be a number or boolean")));
-    }
-    if (args.Length() > 2) {
-      if (!args[2]->IsBoolean()) return ThrowException(Exception::TypeError(
-        String::New("third argument must be a boolean")));
-      fast = args[2]->BooleanValue();
-    }
-  }
-  
-  long int maxnum = getImgCount(self->id_);
-  
-  // compensate for not returning ourself
-  numres++;
-  if (numres > maxnum) numres = maxnum;
-  
-  std::vector<double> v;
-  
-  if (fast) {
-    v = queryImgIDFast(self->id_, VINT64(args[0]), numres);
-  } else {
-    v = queryImgID(self->id_, VINT64(args[0]), numres);
-  }
-  
+static Local<Array> _packageScoreList(const std::vector<double> &v,
+                              const Local<Value> &id,
+                              bool fast)
+{
   size_t len = v.size();
   Local<Array> a = Array::New(len);
   if (len > 1) {
     size_t x = 0;
     for (ssize_t i = len-2; i > -1; i -= 2) {
       Local<Integer> tid = Integer::New(v[i]);
-      if (tid == args[0]) continue;
+      if (tid == id) continue;
       double score = v[i+1];
       if (fast) {
         /*if (score > 0.0)
@@ -175,15 +133,157 @@ Handle<Value> DB::Query(const Arguments& args) {
       a->Set(Integer::New(x++), o);
     }
   }
+  return a;
+}
+
+
+// query(id[, limit[, fast[, keywords]]]) -> [id, ..]
+Handle<Value> DB::Query(const Arguments& args) {
+  HandleScope scope;
+  try {
+  if (args.Length() < 1 || !args[0]->IsNumber()) {
+    return ThrowException(Exception::TypeError(
+      String::New("first argument must be a number")));
+  }
+  DB *self = ObjectWrap::Unwrap<DB>(args.This());
+  unsigned int numres = 25;
+  bool fast = false;
+  int keywords = 0; // 1=auto/extract, 2=explicit
+  int kwJoinType = 0; // 0=OR, 1=AND
+
+  if (args.Length() > 1) {
+    if (!args[1]->IsNumber()) {
+      return ThrowException(Exception::TypeError(
+        String::New("second argument must be a number")));
+    }
+    numres = VINT32(args[1]);
+    if (args.Length() > 2) {
+      if (!args[2]->IsBoolean()) return ThrowException(Exception::TypeError(
+        String::New("third argument must be a boolean")));
+      fast = args[2]->BooleanValue();
+      if (args.Length() > 3) {
+        if (args[3]->IsBoolean()) {
+          if (args[3]->BooleanValue())
+            keywords = 1;
+        } else if (args[3]->IsArray()) {
+          keywords = 2;
+        } else {
+          return ThrowException(Exception::TypeError(
+            String::New("fourth argument must be a boolean or an array")));
+        }
+      }
+    }
+  }
+  
+  long int maxnum = getImgCount(self->id_);
+  
+  // compensate for not returning ourself
+  numres++;
+  if (numres > maxnum) numres = maxnum;
+  
+  std::vector<double> v;
+  
+  if (keywords) {
+    std::vector<int> hv;
+    
+    if (keywords == 1) {
+      hv = getKeywordsImg(self->id_, VINT64(args[0]));
+    } else if (keywords == 2) {
+      Local<Array> a = Local<Array>::Cast(args[3]);
+      uint32_t len = a->Length();
+      hv = std::vector<int>(len);
+      for (uint32_t i = 0; i<len; ++i) {
+        hv[i] = _strHash(STRPTR(a->Get(i)));
+      }
+    }
+    if (fast) {
+      // not yet implemented
+      //v = queryImgIDFastKeywords(self->id_, VINT64(args[0]), numres, kwJoinType, hv);
+      return ThrowException(Exception::Error(
+        String::New("not yet implemented: fast keyword-aided query")));
+    } else {
+      v = queryImgIDKeywords(self->id_, VINT64(args[0]), numres, kwJoinType, hv);
+    }
+  } else {
+    if (fast) {
+      v = queryImgIDFast(self->id_, VINT64(args[0]), numres);
+    } else {
+      v = queryImgID(self->id_, VINT64(args[0]), numres);
+    }
+  }
+  
+  Local<Array> a = _packageScoreList(v, args[0], fast);
+  return scope.Close(a);
+  
+  } catch (std::string e) {
+    return ThrowException(Exception::Error(
+      String::Concat(String::New("ImgDBError: "), String::New(e.c_str()))
+    ));
+  }
+}
+
+
+// queryByImageData(data[, limit=25[, fast=false[, sketch=false]]]) -> [id, ..]
+Handle<Value> DB::QueryByImageData(const Arguments& args) {
+  HandleScope scope;
+  if (args.Length() < 1 || !Buffer::HasInstance(args[0])) {
+    return ThrowException(Exception::TypeError(
+      String::New("first argument must be a buffer")));
+  }
+  DB *self = ObjectWrap::Unwrap<DB>(args.This());
+  Buffer *buffer = ObjectWrap::Unwrap<Buffer>(args[0]->ToObject());
+  unsigned int numres = 25;
+  bool fast = false;
+  int sketch = 0;
+
+  if (args.Length() > 1) {
+    if (!args[1]->IsNumber()) {
+      return ThrowException(Exception::TypeError(
+        String::New("second argument must be a number")));
+    }
+    numres = VINT32(args[1]);
+    if (args.Length() > 2) {
+      if (!args[2]->IsBoolean()) {
+        return ThrowException(Exception::TypeError(
+          String::New("third argument must be a boolean")));
+      }
+      fast = args[2]->BooleanValue();
+      if (args.Length() > 3) {
+        if (!args[3]->IsBoolean()) {
+          return ThrowException(Exception::TypeError(
+            String::New("fourth argument must be a boolean")));
+        }
+        sketch = args[3]->BooleanValue() ? 1 : 0;
+      }
+    }
+  }
+
+  numres++; // <- compensate for not returning ourself
+  long int maxnum = getImgCount(self->id_);
+  if (numres > maxnum) numres = maxnum;
+
+  Magick::Blob blob((const void*)buffer->data(), buffer->length());
+  Magick::Image image(blob);
+  SigStruct *nsig = analyzeImage(&image);
+
+  std::vector<double> v;
+
+  if (fast) {
+    v = queryImgDataFast(self->id_, nsig->sig1, nsig->sig2, nsig->sig3, nsig->avgl,
+      numres, sketch);
+  } else {
+    v = queryImgData(self->id_, nsig->sig1, nsig->sig2, nsig->sig3, nsig->avgl,
+      numres, sketch);
+  }
+
+  delete nsig;
+
+  Local<Array> a = _packageScoreList(v, args[0], fast);
   return scope.Close(a);
 }
 
 
-// queryByKeywords(keywords)
-// queryByKeywords(keywords, numres)
-// queryByKeywords(keywords, fast)
-// queryByKeywords(keywords, numres, fast)
-// queryByKeywords(keywords, numres, fast, andJoin)
+// queryByKeywords(keywords[, numres[, andJoin]])
 Handle<Value> DB::QueryByKeywords(const Arguments& args) {
   HandleScope scope;
   if (args.Length() < 1 || !args[0]->IsArray()) {
@@ -192,27 +292,18 @@ Handle<Value> DB::QueryByKeywords(const Arguments& args) {
   }
   DB *self = ObjectWrap::Unwrap<DB>(args.This());
   unsigned int numres = 25;
-  bool fast = false;
   int kwJoinType = 0; // 0=OR, 1=AND
 
   if (args.Length() > 1) {
-    if (args[1]->IsNumber()) {
-      numres = VINT32(args[1]);
-    } else if (args.Length() == 2 && args[1]->IsBoolean()) {
-      fast = args[1]->BooleanValue();
-    } else {
+    if (!args[1]->IsNumber()) {
       return ThrowException(Exception::TypeError(
-        String::New("second argument must be a number or boolean")));
+        String::New("second argument must be a number")));
     }
+    numres = VINT32(args[1]);
     if (args.Length() > 2) {
       if (!args[2]->IsBoolean()) return ThrowException(Exception::TypeError(
         String::New("third argument must be a boolean")));
-      fast = args[2]->BooleanValue();
-      if (args.Length() > 3) {
-        if (!args[3]->IsBoolean()) return ThrowException(Exception::TypeError(
-          String::New("fourth argument must be a boolean")));
-        kwJoinType = args[3]->BooleanValue() ? 1 : 0;
-      }
+      kwJoinType = args[2]->BooleanValue() ? 1 : 0;
     }
   }
 
@@ -271,9 +362,10 @@ Handle<Value> DB::AddImageFromFileOrURLSync(const Arguments& args) {
 // addImageFromData(buffer[, offset[, length]])
 Handle<Value> DB::AddImageFromData(const Arguments& args) {
   HandleScope scope;
-  if (args.Length() < 1 || !Buffer::HasInstance(args[0]))
+  if (args.Length() < 1 || !Buffer::HasInstance(args[0])) {
     return ThrowException(Exception::TypeError(
       String::New("first argument must be a buffer")));
+  }
   
   DB *self = ObjectWrap::Unwrap<DB>(args.This());
   Buffer *buffer = ObjectWrap::Unwrap<Buffer>(args[0]->ToObject());
@@ -360,6 +452,42 @@ Handle<Value> DB::SetImageFromData(const Arguments& args) {
 }
 
 
+// getImageDimensions(id) -> {width:int, height:int}
+Handle<Value> DB::GetImageDimensions(const Arguments& args) {
+  HandleScope scope;
+  if (args.Length() != 1 || !args[0]->IsNumber()) {
+    return ThrowException(Exception::TypeError(
+      String::New("first and only argument must be a number")));
+  }
+  DB *self = ObjectWrap::Unwrap<DB>(args.This());
+  int w = 0, h = 0;
+  getImageWidthAndHeight(self->id_, VINT64(args[0]), &w, &h);
+  Local<Object> o = Object::New();
+  o->Set(String::NewSymbol("width"), Integer::New(w));
+  o->Set(String::NewSymbol("height"), Integer::New(h));
+  return scope.Close(o);
+}
+
+
+// getImageAvgL(id) -> [Y, I, Q]
+Handle<Value> DB::GetImageAvgL(const Arguments& args) {
+  // avgl is the average luminance of Y, I and Q (YIQ color space)
+  HandleScope scope;
+  if (args.Length() != 1 || !args[0]->IsNumber()) {
+    return ThrowException(Exception::TypeError(
+      String::New("first and only argument must be a number")));
+  }
+  DB *self = ObjectWrap::Unwrap<DB>(args.This());
+  std::vector<double> v = getImageAvgl(self->id_, VINT64(args[0]));
+  size_t len = v.size();
+  Local<Array> a = Array::New(len);
+  for (uint32_t i = 0; i<len; ++i) {
+    a->Set(i, Number::New(v[i]));
+  }
+  return scope.Close(a);
+}
+
+
 // addKeyword(id, keyword) -> hash|false
 Handle<Value> DB::AddKeyword(const Arguments& args) {
   HandleScope scope;
@@ -395,7 +523,7 @@ Handle<Value> DB::AddKeywordHash(const Arguments& args) {
 }
 
 
-// addKeywords(id, keywords)
+// addKeywords(id, keywords) -> [hash, ..]
 Handle<Value> DB::AddKeywords(const Arguments& args) {
   HandleScope scope;
   if (args.Length() < 2) return ThrowException(Exception::TypeError(
@@ -534,9 +662,12 @@ void DB::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "setImageFromFileOrURLSync", DB::SetImageFromFileOrURLSync);
   NODE_SET_PROTOTYPE_METHOD(t, "addImageFromData", DB::AddImageFromData);
   NODE_SET_PROTOTYPE_METHOD(t, "setImageFromData", DB::SetImageFromData);
+  NODE_SET_PROTOTYPE_METHOD(t, "getImageDimensions", DB::GetImageDimensions);
+  NODE_SET_PROTOTYPE_METHOD(t, "getImageAvgL", DB::GetImageAvgL);
   NODE_SET_PROTOTYPE_METHOD(t, "contains", DB::Contains);
   NODE_SET_PROTOTYPE_METHOD(t, "remove", DB::Remove);
   NODE_SET_PROTOTYPE_METHOD(t, "query", DB::Query);
+  NODE_SET_PROTOTYPE_METHOD(t, "queryByImageData", DB::QueryByImageData);
   NODE_SET_PROTOTYPE_METHOD(t, "queryByKeywords", DB::QueryByKeywords);
   NODE_SET_PROTOTYPE_METHOD(t, "addKeyword", DB::AddKeyword);
   NODE_SET_PROTOTYPE_METHOD(t, "addKeywordHash", DB::AddKeywordHash);
@@ -544,8 +675,8 @@ void DB::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "getKeywordHashes", DB::GetKeywordHashes);
 
   // DB.prototype properties
-  t->InstanceTemplate()->SetAccessor(length_symbol, LengthGetter);
-  t->InstanceTemplate()->SetAccessor(ids_symbol, IdsGetter);
+  t->InstanceTemplate()->SetAccessor(String::NewSymbol("length"), LengthGetter);
+  t->InstanceTemplate()->SetAccessor(String::NewSymbol("ids"), IdsGetter);
 
   target->Set(String::NewSymbol("DB"), t->GetFunction());
 }
@@ -553,10 +684,6 @@ void DB::Initialize(Handle<Object> target) {
 extern "C" void init (Handle<Object> target) {
   HandleScope scope;
   Local<Object> exports;
-  
-  id_symbol = NODE_PSYMBOL("id");
-  length_symbol = NODE_PSYMBOL("length");
-  ids_symbol = NODE_PSYMBOL("ids");
 
   DB::Initialize(target);
 

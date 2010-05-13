@@ -31,29 +31,31 @@
 #include <string.h>
 #include <time.h>
 
+#include <Magick++.h>
+
 #include "haar.h"
 #include "bloom_filter.h"
 
 // Weights for the Haar coefficients.
 // Straight from the referenced paper:
-const float weights[2][6][3]={
-		// For scanned picture (sketch=0):
-		//    Y      I      Q       idx total occurs
-		{{ 5.00f, 19.21f, 34.37f},  // 0   58.58      1 (`DC' component)
-			{ 0.83f,  1.26f,  0.36f},  // 1    2.45      3
-			{ 1.01f,  0.44f,  0.45f},  // 2    1.90      5
-			{ 0.52f,  0.53f,  0.14f},  // 3    1.19      7
-			{ 0.47f,  0.28f,  0.18f},  // 4    0.93      9
-			{ 0.30f,  0.14f,  0.27f}}, // 5    0.71      16384-25=16359
+const float weights[2][6][3] = {
+  // For scanned picture (sketch=0):
+  //    Y      I      Q       idx total occurs
+  {{ 5.00f, 19.21f, 34.37f},  // 0   58.58      1 (`DC' component)
+   { 0.83f,  1.26f,  0.36f},  // 1    2.45      3
+   { 1.01f,  0.44f,  0.45f},  // 2    1.90      5
+   { 0.52f,  0.53f,  0.14f},  // 3    1.19      7
+   { 0.47f,  0.28f,  0.18f},  // 4    0.93      9
+   { 0.30f,  0.14f,  0.27f}}, // 5    0.71      16384-25=16359
 
-			// For handdrawn/painted sketch (sketch=1):
-			//    Y      I      Q
-			{{ 4.04f, 15.14f, 22.62f},
-				{ 0.78f,  0.92f,  0.40f},
-				{ 0.46f,  0.53f,  0.63f},
-				{ 0.42f,  0.26f,  0.25f},
-				{ 0.41f,  0.14f,  0.15f},
-				{ 0.32f,  0.07f,  0.38f}}
+  // For handdrawn/painted sketch (sketch=1):
+  //    Y      I      Q
+  {{ 4.04f, 15.14f, 22.62f},
+   { 0.78f,  0.92f,  0.40f},
+   { 0.46f,  0.53f,  0.63f},
+   { 0.42f,  0.26f,  0.25f},
+   { 0.41f,  0.14f,  0.15f},
+   { 0.32f,  0.07f,  0.38f}}
 };
 
 #define POSIX_SYSTEM 1
@@ -93,106 +95,106 @@ class SigStruct;
 class DiskSigStruct {
 public:
 
-	imageId id;			/* picture id */
-	haar::Idx sig1[NUM_COEFS];		/* Y positions with largest magnitude */
-	haar::Idx sig2[NUM_COEFS];		/* I positions with largest magnitude */
-	haar::Idx sig3[NUM_COEFS];		/* Q positions with largest magnitude */
-	double avgl[3];		/* YIQ for position [0,0] */
-	/* image properties extracted when opened for the first time */
-	int width;			/* in pixels */
-	int height;			/* in pixels */
+  imageId id;      /* picture id */
+  haar::Idx sig1[NUM_COEFS];    /* Y positions with largest magnitude */
+  haar::Idx sig2[NUM_COEFS];    /* I positions with largest magnitude */
+  haar::Idx sig3[NUM_COEFS];    /* Q positions with largest magnitude */
+  double avgl[3];    /* YIQ for position [0,0] */
+  /* image properties extracted when opened for the first time */
+  int width;      /* in pixels */
+  int height;      /* in pixels */
 
-	DiskSigStruct() {}
-	~DiskSigStruct()
-	{
+  DiskSigStruct() {}
+  ~DiskSigStruct()
+  {
 
-	}
+  }
 };
 
 // older versions of it
 /* signature structure */
 typedef struct sigStructV06_{
-	imageId id;			/* picture id */
-	haar::Idx sig1[NUM_COEFS];		/* Y positions with largest magnitude */
-	haar::Idx sig2[NUM_COEFS];		/* I positions with largest magnitude */
-	haar::Idx sig3[NUM_COEFS];		/* Q positions with largest magnitude */
-	double avgl[3];		/* YIQ for position [0,0] */
-	double score;			/* used when doing queries */
-	/* image properties extracted when opened for the first time */
-	int width;			/* in pixels */
-	int height;			/* in pixels */
+  imageId id;      /* picture id */
+  haar::Idx sig1[NUM_COEFS];    /* Y positions with largest magnitude */
+  haar::Idx sig2[NUM_COEFS];    /* I positions with largest magnitude */
+  haar::Idx sig3[NUM_COEFS];    /* Q positions with largest magnitude */
+  double avgl[3];    /* YIQ for position [0,0] */
+  double score;      /* used when doing queries */
+  /* image properties extracted when opened for the first time */
+  int width;      /* in pixels */
+  int height;      /* in pixels */
 
-	bool operator< (const sigStructV06_ & right) const {
-		return score < (right.score);
-	}
+  bool operator< (const sigStructV06_ & right) const {
+    return score < (right.score);
+  }
 } sigStructV06;
 
 /* in memory signature structure */
 class SigStruct: public DiskSigStruct {
 public:
-	double score;			/* used when doing queries */
-	int_hashset keywords;
+  double score;      /* used when doing queries */
+  int_hashset keywords;
 
-	SigStruct(DiskSigStruct* ds) {
-		id = ds->id;
+  SigStruct(DiskSigStruct* ds) {
+    id = ds->id;
 
-		memcpy(sig1,ds->sig1,sizeof(sig1));
-		memcpy(sig2,ds->sig2,sizeof(sig2));
-		memcpy(sig3,ds->sig3,sizeof(sig3));
-		memcpy(avgl,ds->avgl,sizeof(avgl));
+    memcpy(sig1,ds->sig1,sizeof(sig1));
+    memcpy(sig2,ds->sig2,sizeof(sig2));
+    memcpy(sig3,ds->sig3,sizeof(sig3));
+    memcpy(avgl,ds->avgl,sizeof(avgl));
 
-		width=ds->width;
-		height=ds->height;
+    width=ds->width;
+    height=ds->height;
 
-	}
+  }
 
-	SigStruct(sigStructV06* ds) {
-		id = ds->id;
+  SigStruct(sigStructV06* ds) {
+    id = ds->id;
 
-		memcpy(sig1,ds->sig1,sizeof(sig1));
-		memcpy(sig2,ds->sig2,sizeof(sig2));
-		memcpy(sig3,ds->sig3,sizeof(sig3));
-		memcpy(avgl,ds->avgl,sizeof(avgl));
+    memcpy(sig1,ds->sig1,sizeof(sig1));
+    memcpy(sig2,ds->sig2,sizeof(sig2));
+    memcpy(sig3,ds->sig3,sizeof(sig3));
+    memcpy(avgl,ds->avgl,sizeof(avgl));
 
-		width=ds->width;
-		height=ds->height;
+    width=ds->width;
+    height=ds->height;
 
-	}
+  }
 
 
-	SigStruct() {
+  SigStruct() {
 
-	}
+  }
 
-	~SigStruct()
-	{
+  ~SigStruct()
+  {
 
-	}
+  }
 
-	bool operator< (const SigStruct & right) const {
-		return score < (right.score);
-	}
+  bool operator< (const SigStruct & right) const {
+    return score < (right.score);
+  }
 
 };
 
 struct cmpf
 {
-	bool operator()(const long int s1, const long int s2) const
-	{
-		return s1<s2;
-	}
+  bool operator()(const long int s1, const long int s2) const
+  {
+    return s1<s2;
+  }
 };
 
 class KwdFrequencyStruct {
 public:
-	int kwdId;
-	long int freq;	
+  int kwdId;
+  long int freq;  
 
-	KwdFrequencyStruct(int kwdId, long int freq): kwdId(kwdId),freq(freq) {}
+  KwdFrequencyStruct(int kwdId, long int freq): kwdId(kwdId),freq(freq) {}
 
-	bool operator< (const KwdFrequencyStruct & right) const {
-		return freq > (right.freq);
-	}
+  bool operator< (const KwdFrequencyStruct & right) const {
+    return freq > (right.freq);
+  }
 };
 
 // typedefs
@@ -210,11 +212,11 @@ typedef longint_vector::iterator longintVectorIterator;
 
 /* signature structure */
 typedef struct srzMetaDataStruct_{
-	int isValidMetadata;
-	int iskVersion;
-	int bindingLang;
-	int isTrial;
-	int compilePlat;
+  int isValidMetadata;
+  int iskVersion;
+  int bindingLang;
+  int isTrial;
+  int compilePlat;
 } srzMetaDataStruct;
 
 /* Bloom filter globals */
@@ -225,23 +227,23 @@ typedef struct srzMetaDataStruct_{
 
 class dbSpaceStruct {
 public:
-	dbSpaceStruct() {
-		imgIdsFilter = new bloom_filter(AVG_IMGS_PER_DBSPACE, 1.0/(100.0 * AVG_IMGS_PER_DBSPACE),RANDOM_BLOOM_SEED);
-	}
+  dbSpaceStruct() {
+    imgIdsFilter = new bloom_filter(AVG_IMGS_PER_DBSPACE, 1.0/(100.0 * AVG_IMGS_PER_DBSPACE),RANDOM_BLOOM_SEED);
+  }
 
-	~dbSpaceStruct()
-	{
-		delete imgIdsFilter;
-	}
+  ~dbSpaceStruct()
+  {
+    delete imgIdsFilter;
+  }
 
-	sigMap sigs;
+  sigMap sigs;
 
-	/* Lists of picture ids, indexed by [color-channel][sign][position], i.e.,
-	   R=0/G=1/B=2, pos=0/neg=1, (i*NUM_PIXELS+j)
-	 */
-	imageId_list imgbuckets[3][2][16384];
-	bloom_filter* imgIdsFilter;
-	//std::vector<long int> imgIds;	/* img list */
+  /* Lists of picture ids, indexed by [color-channel][sign][position], i.e.,
+     R=0/G=1/B=2, pos=0/neg=1, (i*NUM_PIXELS+j)
+   */
+  imageId_list imgbuckets[3][2][16384];
+  bloom_filter* imgIdsFilter;
+  //std::vector<long int> imgIds;  /* img list */
 } ;
 
 
@@ -251,27 +253,29 @@ typedef std::map<const int, dbSpaceStruct*>::iterator  dpspaceIterator;
 
 // Serialization constants
 
-#define	SRZ_VERSIONED			1
-#define	SRZ_V0_5_1				1
-#define	SRZ_V0_6_0				2
-#define	SRZ_V0_7_0				3
-#define	SRZ_CUR_VERSION			3
-#define	SRZ_SINGLE_DBSPACE		1
-#define	SRZ_MULTIPLE_DBSPACE	2
-#define	SRZ_TRIAL_VERSION		1
-#define	SRZ_FULL_VERSION		2
-#define	SRZ_PLAT_WINDOWS		1
-#define	SRZ_PLAT_LINUX			2
-#define	SRZ_LANG_PYTHON			1
-#define	SRZ_LANG_JAVA			2
+#define  SRZ_VERSIONED      1
+#define  SRZ_V0_5_1        1
+#define  SRZ_V0_6_0        2
+#define  SRZ_V0_7_0        3
+#define  SRZ_CUR_VERSION      3
+#define  SRZ_SINGLE_DBSPACE    1
+#define  SRZ_MULTIPLE_DBSPACE  2
+#define  SRZ_TRIAL_VERSION    1
+#define  SRZ_FULL_VERSION    2
+#define  SRZ_PLAT_WINDOWS    1
+#define  SRZ_PLAT_LINUX      2
+#define  SRZ_LANG_PYTHON      1
+#define  SRZ_LANG_JAVA      2
 
 // Private functions
 //void saveGlobalSerializationMetadata(std::ofstream& f);
 
 // Main exported functions
+SigStruct *analyzeImage(Magick::Image *image);
 double_vector queryImgID(const int dbId, long int id, unsigned int numres);
 double_vector queryImgIDFast(const int dbId, long int id, unsigned int numres);
-double_vector queryImgData(const int dbId, haar::Idx * sig1, haar::Idx * sig2, haar::Idx * sig3, double *avgl, int numres, int sketch);
+double_vector queryImgData(const int dbId, haar::Idx * sig1, haar::Idx * sig2, haar::Idx * sig3, double *avgl, unsigned int numres, int sketch);
+double_vector queryImgDataFast(const int dbId, haar::Idx * sig1, haar::Idx * sig2, haar::Idx * sig3, double *avgl, unsigned int numres, int sketch);
 int addImage(const int dbId, const long int id, char* filename);
 int savedb(const int dbId, char* filename);
 int loaddb(const int dbId, char* filename);
@@ -285,6 +289,7 @@ long int getImgCount(const int dbId);
 bool isImageOnDB(const int dbId, long int id);
 int getImageHeight(const int dbId, long int id);
 int getImageWidth(const int dbId, long int id);
+bool getImageWidthAndHeight(const int dbId, long int id, int *w, int *h);
 double calcAvglDiff(const int dbId, long int id1, long int id2);
 double calcDiff(const int dbId, long int id1, long int id2);
 double_vector getImageAvgl(const int dbId, long int id1);
@@ -305,29 +310,29 @@ std::vector<int> getKeywordsImg(const int dbId, const int id);
 // query by keywords
 std::vector<double> queryImgIDKeywords(const int dbId, long int id, unsigned int numres, int kwJoinType, std::vector<int> keywords);
 std::vector<double> queryImgIDFastKeywords(const int dbId, long int id, unsigned int numres, int kwJoinType, std::vector<int> keywords);
-std::vector<double> queryImgDataFastKeywords(const int dbId, int * sig1, int * sig2, int * sig3, double *avgl, int numres, int sketch, int kwJoinType, std::vector<int> keywords);
+std::vector<double> queryImgDataFastKeywords(const int dbId, int * sig1, int * sig2, int * sig3, double *avgl, unsigned int numres, int sketch, int kwJoinType, std::vector<int> keywords);
 std::vector<long int> getAllImgsByKeywords(const int dbId, const unsigned int numres, int kwJoinType, std::vector<int> keywords);
 double getKeywordsVisualDistance(const int dbId, int distanceType, std::vector<int> keywords);
 std::vector<int> mostPopularKeywords(const int dbId, std::vector<long int> imgs, std::vector<int> excludedKwds, int count, int mode);
 
 // keywords
-std::vector<int> getKeywordsPopular(const int dbId, const int numres);
+std::vector<int> getKeywordsPopular(const int dbId, const unsigned int numres);
 
 /* keyword postings structure */
 #define AVG_IMGS_PER_KWD 1000
 
 class keywordStruct {
-	//std::vector<long int> imgIds;	/* img list */
+  //std::vector<long int> imgIds;  /* img list */
 public:
-	keywordStruct() {
-		imgIdsFilter = new bloom_filter(AVG_IMGS_PER_KWD, 1.0/(100.0 * AVG_IMGS_PER_KWD),RANDOM_BLOOM_SEED);
-	}
-	bloom_filter* imgIdsFilter;
+  keywordStruct() {
+    imgIdsFilter = new bloom_filter(AVG_IMGS_PER_KWD, 1.0/(100.0 * AVG_IMGS_PER_KWD),RANDOM_BLOOM_SEED);
+  }
+  bloom_filter* imgIdsFilter;
 
-	~keywordStruct()
-	{
-		delete imgIdsFilter;
-	}
+  ~keywordStruct()
+  {
+    delete imgIdsFilter;
+  }
 } ;
 
 typedef std::map<const int, keywordStruct*> keywordsMapType;
@@ -336,9 +341,9 @@ typedef std::map<const int, keywordStruct*>::iterator  keywordsMapIterator;
 // clustering
 /* cluster list structure */
 typedef struct clustersStruct_{
-	imageId id;			/* representative image id */
-	std::vector<long int> imgIds;	/* img list */
-	double diameter;		
+  imageId id;      /* representative image id */
+  std::vector<long int> imgIds;  /* img list */
+  double diameter;    
 } clustersStruct;
 
 typedef std::list<clustersStruct> cluster_list;
